@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 320" width="960" height="320" role="img" aria-label="Database Buddy, an automation by Isaiah Anson. Sorts OneDrive IT docs into Notion databases. Pipedream workflow, GPT-4o, 10 Notion databases.">
+<title>Database Buddy, an automation by Isaiah Anson. Sorts OneDrive IT docs into Notion databases. Pipedream workflow, GPT-4o, 10 Notion databases.</title>
+<style>
+@keyframes in{from{opacity:0}to{opacity:1}}
+@keyframes lit{from{opacity:.3}to{opacity:1}}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
+@keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.in{animation:in .45s ease both}
+.lit{animation:lit .45s ease both}
+.chip{animation:rise .5s ease 1.9s both}
+.halo{animation:pulse 3.4s ease-in-out infinite}
+.beat{animation:pulse 2.4s ease-in-out infinite}
+.grow{transform-box:fill-box;transform-origin:0 50%;animation:grow .7s cubic-bezier(.3,.7,.2,1) both}
+@media (prefers-reduced-motion:reduce){.in,.lit,.chip,.halo,.beat,.grow{animation:none}}
+</style>
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#08131a"/><stop offset="0.55" stop-color="#0c1f29"/><stop offset="1" stop-color="#0f2f3b"/></linearGradient>
+<linearGradient id="tile" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0d2028"/><stop offset="1" stop-color="#12404b"/></linearGradient>
+<radialGradient id="g1" cx="88" cy="86" r="330" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#2dd4bf" stop-opacity="0.2"/><stop offset="1" stop-color="#2dd4bf" stop-opacity="0"/></radialGradient>
+<radialGradient id="g2" cx="900" cy="340" r="340" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#3b82f6" stop-opacity="0.3"/><stop offset="1" stop-color="#3b82f6" stop-opacity="0"/></radialGradient>
+<radialGradient id="halo" cx="88" cy="86" r="62" gradientUnits="userSpaceOnUse"><stop offset="0.45" stop-color="#2dd4bf" stop-opacity="0.42"/><stop offset="1" stop-color="#2dd4bf" stop-opacity="0"/></radialGradient>
+<pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#ffffff" fill-opacity="0.5"/></pattern>
+<linearGradient id="fade" x1="0" y1="0" x2="1" y2="0"><stop offset="0.35" stop-color="#ffffff" stop-opacity="0"/><stop offset="1" stop-color="#ffffff" stop-opacity="0.2"/></linearGradient>
+<mask id="m"><rect width="960" height="320" fill="url(#fade)"/></mask>
+<clipPath id="clip"><rect width="960" height="320" rx="20"/></clipPath>
+
+</defs>
+<g clip-path="url(#clip)">
+<rect width="960" height="320" fill="url(#bg)"/>
+<rect width="960" height="320" fill="url(#dots)" mask="url(#m)"/>
+<rect width="960" height="320" fill="url(#g1)"/>
+<rect width="960" height="320" fill="url(#g2)"/>
+</g>
+<rect x="0.5" y="0.5" width="959" height="319" rx="19.5" fill="none" stroke="#ffffff" stroke-opacity="0.1"/>
+<g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif">
+<circle class="halo" cx="88" cy="86" r="62" fill="url(#halo)"/>
+<rect x="56" y="54" width="64" height="64" rx="16" fill="url(#tile)" stroke="#2dd4bf" stroke-opacity="0.5" stroke-width="1.5"/><g fill="none" stroke="#2dd4bf" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="88" cy="75" rx="14" ry="5.5"/><path d="M74 75 v22 a14 5.5 0 0 0 28 0 v-22"/><path d="M74 86 a14 5.5 0 0 0 28 0"/></g>
+<text x="137" y="82" font-size="12.5" font-weight="700" letter-spacing="2.2" fill="#2dd4bf">AUTOMATION</text>
+<text x="137" y="104" font-size="14" fill="#9ea6ba">by Isaiah Anson</text>
+<text x="55" y="182" font-size="46" font-weight="700" letter-spacing="-0.6" fill="#f4f6fb">Database Buddy</text>
+<text x="57" y="217" font-size="20" fill="#d3d8e6">Sorts OneDrive IT docs into Notion databases.</text>
+<rect x="56.5" y="242.5" width="148" height="25" rx="12.5" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.18"/><text x="130.5" y="259.3" font-size="13" fill="#d3d8e6" text-anchor="middle">Pipedream workflow</text>
+<rect x="213.5" y="242.5" width="74" height="25" rx="12.5" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.18"/><text x="250.5" y="259.3" font-size="13" fill="#d3d8e6" text-anchor="middle">GPT-4o</text>
+<rect x="296.5" y="242.5" width="149" height="25" rx="12.5" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.18"/><text x="371" y="259.3" font-size="13" fill="#d3d8e6" text-anchor="middle">10 Notion databases</text>
+<rect x="600" y="42" width="312" height="236" rx="14" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.13"/>
+<text x="618" y="66" font-size="13.5" fill="#9ea6ba">Category routing</text>
+<text x="894" y="66" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#7b8398" text-anchor="end">27 aliases</text>
+<path d="M600 80 H912" stroke="#ffffff" stroke-opacity="0.1"/>
+<g class="in" style="animation-delay:0.50s"><text x="618" y="101" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" fill="#9ea6ba">azure</text><path d="M751 96.5 h13 m-4.5 -4 l4.5 4 l-4.5 4" fill="none" stroke="#2dd4bf" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><text x="777" y="101" font-size="14" fill="#d3d8e6">Cloud Services</text></g>
+<path d="M616 112 H896" stroke="#ffffff" stroke-opacity="0.05"/>
+<g class="in" style="animation-delay:0.72s"><text x="618" y="133" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" fill="#9ea6ba">identity</text><path d="M751 128.5 h13 m-4.5 -4 l4.5 4 l-4.5 4" fill="none" stroke="#2dd4bf" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><text x="777" y="133" font-size="14" fill="#d3d8e6">User Management</text></g>
+<path d="M616 144 H896" stroke="#ffffff" stroke-opacity="0.05"/>
+<g class="in" style="animation-delay:0.94s"><text x="618" y="165" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" fill="#9ea6ba">virtual desktop</text><path d="M751 160.5 h13 m-4.5 -4 l4.5 4 l-4.5 4" fill="none" stroke="#2dd4bf" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><text x="777" y="165" font-size="14" fill="#d3d8e6">VDI</text></g>
+<path d="M616 176 H896" stroke="#ffffff" stroke-opacity="0.05"/>
+<g class="in" style="animation-delay:1.16s"><text x="618" y="197" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" fill="#9ea6ba">mobile device</text><path d="M751 192.5 h13 m-4.5 -4 l4.5 4 l-4.5 4" fill="none" stroke="#2dd4bf" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><text x="777" y="197" font-size="14" fill="#d3d8e6">MDM</text></g>
+<path d="M616 208 H896" stroke="#ffffff" stroke-opacity="0.05"/>
+<g class="in" style="animation-delay:1.38s"><text x="618" y="229" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" fill="#9ea6ba">cybersecurity</text><path d="M751 224.5 h13 m-4.5 -4 l4.5 4 l-4.5 4" fill="none" stroke="#2dd4bf" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><text x="777" y="229" font-size="14" fill="#d3d8e6">Security</text></g>
+<path d="M616 240 H896" stroke="#ffffff" stroke-opacity="0.05"/>
+<g class="in" style="animation-delay:1.60s"><text x="618" y="261" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" fill="#9ea6ba">disaster recovery</text><path d="M751 256.5 h13 m-4.5 -4 l4.5 4 l-4.5 4" fill="none" stroke="#2dd4bf" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><text x="777" y="261" font-size="14" fill="#d3d8e6">Backup Recovery</text></g>
+</g>
+</svg>

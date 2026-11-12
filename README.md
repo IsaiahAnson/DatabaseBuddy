@@ -1,4 +1,4 @@
-# Database Buddy
+<img src="https://raw.githubusercontent.com/IsaiahAnson/database-buddy/main/docs/images/banner.svg" width="100%" alt="Database Buddy, an automation by Isaiah Anson. Sorts OneDrive IT docs into Notion databases. Pipedream workflow, GPT-4o, 10 Notion databases.">
 
 [![CI](https://github.com/IsaiahAnson/database-buddy/actions/workflows/ci.yml/badge.svg)](https://github.com/IsaiahAnson/database-buddy/actions/workflows/ci.yml)
 
