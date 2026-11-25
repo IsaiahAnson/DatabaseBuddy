@@ -3,7 +3,7 @@ import notion from "@pipedream/notion"
 
 export default defineComponent({
   name: "Update Notion Pages with Enhanced Content",
-  description: "Update existing Notion pages with enhanced content from AI processing, handling proper parent-child relationships and content management options",
+  description: "Update existing Notion pages with enhanced content from AI processing, with options to replace content and archive pages that have no record",
   type: "action",
   props: {
     notion,
@@ -16,15 +16,6 @@ export default defineComponent({
       type: "string[]", 
       label: "Created Pages",
       description: "Created pages from database population step. Each item should be a JSON string containing page information including page IDs.",
-      optional: true,
-    },
-    parentPageId: {
-      propDefinition: [
-        notion,
-        "pageId",
-      ],
-      label: "Parent Page ID",
-      description: "Set the parent page ID to avoid archived ancestor issues. All updated pages will be moved under this parent.",
       optional: true,
     },
     replaceContent: {
@@ -95,13 +86,14 @@ export default defineComponent({
       }
       
       // Add other enhanced properties if available
+      // Same property step 04 writes. Notion limits one text item to 2000 characters.
       if (enhancedData.summary && this.addSummaries) {
-        properties["Summary"] = {
+        properties["Content Summary"] = {
           rich_text: [
             {
               type: "text",
               text: {
-                content: enhancedData.summary,
+                content: String(enhancedData.summary).slice(0, 2000),
               },
             },
           ],
@@ -110,9 +102,13 @@ export default defineComponent({
       
       if (enhancedData.tags) {
         properties["Tags"] = {
-          multi_select: enhancedData.tags.map(tag => ({
-            name: tag,
-          })),
+          // Notion option names cannot contain commas and are limited to 100 characters.
+          multi_select: enhancedData.tags
+            .map(tag => String(tag).replace(/,/g, " ").trim().slice(0, 100))
+            .filter(Boolean)
+            .map(tag => ({
+              name: tag,
+            })),
         };
       }
       
@@ -150,7 +146,7 @@ export default defineComponent({
               {
                 type: "text",
                 text: {
-                  content: enhancedData.summary,
+                  content: String(enhancedData.summary).slice(0, 2000),
                 },
               },
             ],
@@ -190,7 +186,7 @@ export default defineComponent({
                 {
                   type: "text",
                   text: {
-                    content: paragraph.trim(),
+                    content: paragraph.trim().slice(0, 2000),
                   },
                 },
               ],
@@ -215,6 +211,7 @@ export default defineComponent({
   async run({ $ }) {
     const results = {
       updatedPages: [],
+      skipped: [],
       errors: [],
       summary: {},
     };
@@ -275,21 +272,19 @@ export default defineComponent({
               continue;
             }
             
+            // Step 06 could not enhance this record, so leave its page as it is.
+            if (enhanced.enhancement_error) {
+              results.skipped.push({ id: pageId, reason: enhanced.enhancement_error });
+              continue;
+            }
+
             // Retrieve existing page
             const existingPage = await this.notion.retrievePage(pageId);
             
-            // Build update payload
+            // Build update payload. A page's parent cannot be changed through this endpoint.
             const updatePayload = {
               properties: await this.buildPageProperties(enhanced, existingPage),
             };
-            
-            // Set parent if specified
-            if (this.parentPageId) {
-              updatePayload.parent = {
-                type: "page_id",
-                page_id: this.parentPageId,
-              };
-            }
             
             // Update page properties
             const updatedPage = await this.notion.updatePage(pageId, updatePayload);
@@ -328,20 +323,13 @@ export default defineComponent({
       
       // Process any remaining enhanced records that didn't match created pages
       for (const enhanced of enhancedData) {
-        if (enhanced.pageId && !results.updatedPages.find(p => p.id === enhanced.pageId)) {
+        if (enhanced.pageId && !enhanced.enhancement_error && !results.updatedPages.find(p => p.id === enhanced.pageId)) {
           try {
             const existingPage = await this.notion.retrievePage(enhanced.pageId);
             
             const updatePayload = {
               properties: await this.buildPageProperties(enhanced, existingPage),
             };
-            
-            if (this.parentPageId) {
-              updatePayload.parent = {
-                type: "page_id", 
-                page_id: this.parentPageId,
-              };
-            }
             
             await this.notion.updatePage(enhanced.pageId, updatePayload);
             
@@ -378,12 +366,17 @@ export default defineComponent({
         totalProcessed: enhancedData.length,
         pagesUpdated: results.updatedPages.length,
         errors: results.errors.length,
+        skipped: results.skipped.length,
         contentReplaced: this.replaceContent,
-        parentSet: !!this.parentPageId,
         knowledgeBaseTitle: this.knowledgeBaseTitle,
       };
       
-      $.export("$summary", `Successfully updated ${results.updatedPages.length} Notion pages with enhanced content. ${results.errors.length} errors occurred.`);
+      // Fail the run when every page update failed.
+      if (results.updatedPages.length === 0 && results.errors.length > 0) {
+        throw new Error(`No pages were updated. ${results.errors.length} errors. First error: ${results.errors[0].error}`);
+      }
+      
+      $.export("$summary", `Updated ${results.updatedPages.length} Notion pages with enhanced content. ${results.skipped.length} skipped, ${results.errors.length} errors occurred.`);
       
       return results;
       

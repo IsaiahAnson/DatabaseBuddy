@@ -1,5 +1,20 @@
 import { axios } from "@pipedream/platform"
 import microsoft_onedrive from "@pipedream/microsoft_onedrive"
+import openai from "@pipedream/openai"
+
+// The ten categories step 04 has a Notion database for. Keep this list in sync with step 04.
+const CATEGORIES = [
+  "Network Infrastructure",
+  "VDI",
+  "Applications",
+  "Hardware",
+  "Security",
+  "MDM",
+  "Cloud Services",
+  "Backup Recovery",
+  "User Management",
+  "Monitoring",
+];
 
 export default defineComponent({
   name: "Comprehensive OneDrive Knowledge Scanner",
@@ -7,6 +22,12 @@ export default defineComponent({
   type: "action",
   props: {
     microsoft_onedrive,
+    openai,
+    data_store: {
+      type: "data_store",
+      label: "Data Store",
+      description: "Remembers each processed OneDrive item (id and eTag) so unchanged files are skipped on later runs",
+    },
     folderId: {
       propDefinition: [
         microsoft_onedrive,
@@ -38,7 +59,7 @@ export default defineComponent({
     excludeFolders: {
       type: "string[]",
       label: "Exclude Folders",
-      description: "List of folder names to exclude from scanning (case-insensitive)",
+      description: "Folder names to exclude from scanning (exact name, case-insensitive)",
       optional: true,
       default: ["temp", "cache", "backup", "archive", "recycle bin", "trash"],
     },
@@ -127,6 +148,52 @@ export default defineComponent({
       return intersection.size / union.size;
     },
 
+    // Returns the canonical category name when the value matches one (any case),
+    // otherwise the trimmed value, so step 04 can still try its aliases.
+    matchCategory(value) {
+      const text = String(value || "").trim();
+      const match = CATEGORIES.find(name => name.toLowerCase() === text.toLowerCase());
+      return match || text || "Uncategorized";
+    },
+
+    // Data store key for one OneDrive item.
+    dedupeKey(item) {
+      return `onedrive:${item.id}`;
+    },
+
+    // The eTag changes when the file changes. lastModifiedDateTime is a fallback.
+    itemVersion(item) {
+      return item.eTag || item.lastModifiedDateTime || null;
+    },
+
+    // True when the stored entry was written for the same version of the item.
+    isSameVersion(stored, item) {
+      const version = this.itemVersion(item);
+      return Boolean(stored && version && stored.version === version);
+    },
+
+    async isUnchanged(item) {
+      const stored = await this.data_store.get(this.dedupeKey(item));
+      return this.isSameVersion(stored, item);
+    },
+
+    // Maps one processed document to the record shape the later steps read.
+    toRecord(doc) {
+      const analysis = doc.aiAnalysis?.analysis || {};
+      return {
+        id: doc.metadata.id,
+        eTag: doc.metadata.eTag || null,
+        title: doc.metadata.name,
+        category: this.matchCategory(analysis.knowledgeCategory),
+        content_type: analysis.documentType || "",
+        tags: Array.isArray(analysis.keyTopics) ? analysis.keyTopics : [],
+        summary: analysis.importantInfo || "",
+        content: doc.extractedContent?.content || "",
+        source: "OneDrive",
+        webUrl: doc.metadata.webUrl || null,
+      };
+    },
+
     async extractTextFromFile(file, $) {
       try {
         const downloadUrl = file["@microsoft.graph.downloadUrl"];
@@ -203,28 +270,35 @@ Provide analysis in this exact JSON format:
   "technicalRelevance": "High|Medium|Low",
   "importantInfo": "key information extracted from content",
   "useCases": ["use case 1", "use case 2"],
-  "knowledgeCategory": "category (e.g., 'Infrastructure', 'Security', 'Development')",
+  "knowledgeCategory": "exactly one of: ${CATEGORIES.join(", ")}",
   "confidenceScore": 0.85,
   "extractionNotes": "notes about content quality and extraction method"
-}`;
+}
 
-        const response = await $.services.openai.completions.create({
-          model: "gpt-4o",
-          messages: [
-            { 
-              role: "system", 
-              content: "You are an expert AI assistant specialized in analyzing IT knowledge documents. Always return valid JSON in the exact format requested. Be precise and analytical." 
-            },
-            { role: "user", content: prompt }
-          ],
-          temperature: 0.2,
-          max_tokens: 1000,
+knowledgeCategory must be exactly one of these names: ${CATEGORIES.join(", ")}. Pick the closest one.`;
+
+        const response = await this.openai.createChatCompletion({
+          $,
+          data: {
+            model: "gpt-4o",
+            messages: [
+              {
+                role: "system",
+                content: "You are an expert AI assistant specialized in analyzing IT knowledge documents. Always return valid JSON in the exact format requested. Be precise and analytical."
+              },
+              { role: "user", content: prompt }
+            ],
+            temperature: 0.2,
+            max_tokens: 1000,
+            response_format: { type: "json_object" },
+          },
         });
 
-        const aiAnalysis = response.choices[0].message.content;
+        const aiAnalysis = response.generated_message?.content || "";
         
         try {
           const parsedAnalysis = JSON.parse(aiAnalysis);
+          parsedAnalysis.knowledgeCategory = this.matchCategory(parsedAnalysis.knowledgeCategory);
           return {
             success: true,
             analysis: parsedAnalysis
@@ -262,45 +336,59 @@ Provide analysis in this exact JSON format:
       }
     },
 
-    async scanFolder(folderId, processedFiles, excludeFolderNames, includeTypes, maxFiles) {
+    async scanFolder(folderId, processedFiles, excludeFolderNames, includeTypes, maxFiles, stats, isRoot = false) {
       if (processedFiles.length >= maxFiles) {
         return processedFiles;
       }
 
       try {
-        const response = await this.microsoft_onedrive.httpRequest({
-          url: `/items/${folderId}/children?$expand=thumbnails&$select=id,name,file,folder,size,createdDateTime,lastModifiedDateTime,parentReference,@microsoft.graph.downloadUrl`,
-        });
+        let url = `/items/${folderId}/children?$expand=thumbnails&$select=id,name,file,folder,size,createdDateTime,lastModifiedDateTime,parentReference,webUrl,eTag,@microsoft.graph.downloadUrl`;
 
-        for (const item of response.value) {
-          if (processedFiles.length >= maxFiles) {
-            break;
-          }
+        // Graph returns children in pages; follow @odata.nextLink until enough files are found.
+        while (url && processedFiles.length < maxFiles) {
+          const response = await this.microsoft_onedrive.httpRequest({ url });
 
-          if (item.folder && this.scanSubfolders) {
-            const folderNameLower = item.name.toLowerCase();
-            const shouldExclude = excludeFolderNames.some(excludeName => 
-              folderNameLower.includes(excludeName.toLowerCase())
-            );
+          for (const item of response.value) {
+            if (processedFiles.length >= maxFiles) {
+              break;
+            }
 
-            if (!shouldExclude) {
-              await this.scanFolder(item.id, processedFiles, excludeFolderNames, includeTypes, maxFiles);
+            if (item.folder && this.scanSubfolders) {
+              const folderNameLower = item.name.toLowerCase();
+              const shouldExclude = excludeFolderNames.some(excludeName =>
+                folderNameLower === excludeName.toLowerCase()
+              );
+
+              if (!shouldExclude) {
+                await this.scanFolder(item.id, processedFiles, excludeFolderNames, includeTypes, maxFiles, stats);
+              }
+            }
+
+            if (item.file && item.file.mimeType) {
+              const shouldInclude = includeTypes.some(type =>
+                item.file.mimeType.includes(type) ||
+                type.includes(item.file.mimeType)
+              );
+
+              if (shouldInclude) {
+                if (await this.isUnchanged(item)) {
+                  stats.skippedUnchanged++;
+                } else {
+                  processedFiles.push(item);
+                }
+              }
             }
           }
 
-          if (item.file && item.file.mimeType) {
-            const shouldInclude = includeTypes.some(type => 
-              item.file.mimeType.includes(type) || 
-              type.includes(item.file.mimeType)
-            );
-
-            if (shouldInclude) {
-              processedFiles.push(item);
-            }
-          }
+          url = response["@odata.nextLink"];
         }
       } catch (error) {
+        // A failure on the top folder (for example an expired connection) must fail the run.
+        if (isRoot) {
+          throw error;
+        }
         console.error(`Error scanning folder ${folderId}:`, error);
+        stats.folderErrors.push({ folderId, error: error.message });
       }
 
       return processedFiles;
@@ -436,6 +524,7 @@ Provide analysis in this exact JSON format:
     const startTime = Date.now();
     const results = [];
     let scannedFiles = [];
+    const scanStats = { skippedUnchanged: 0, folderErrors: [] };
 
     // Step 1: Scan OneDrive folders
     $.export("$summary", "Starting comprehensive OneDrive knowledge document scan...");
@@ -445,12 +534,17 @@ Provide analysis in this exact JSON format:
       scannedFiles,
       this.excludeFolders || [],
       this.includeFileTypes,
-      this.maxFiles
+      this.maxFiles,
+      scanStats,
+      true
     );
 
     if (scannedFiles.length === 0) {
+      $.export("$summary", `No new or changed files found. ${scanStats.skippedUnchanged} unchanged files skipped.`);
       return {
-        message: "No files found matching the criteria",
+        message: "No new or changed files matching the criteria",
+        records: [],
+        scanStats,
         scanSettings: {
           folderId: this.folderId,
           includeFileTypes: this.includeFileTypes,
@@ -474,6 +568,7 @@ Provide analysis in this exact JSON format:
           lastModifiedDateTime: file.lastModifiedDateTime,
           parentPath: file.parentReference?.path,
           webUrl: file.webUrl,
+          eTag: file.eTag,
         };
 
         // Extract content
@@ -519,18 +614,52 @@ Provide analysis in this exact JSON format:
       }
     }
 
+    // If no file could be classified, fail the run so Pipedream reports it.
+    const aiFailures = results.filter(r => !r.aiAnalysis?.success);
+    if (aiFailures.length === results.length) {
+      const firstError = aiFailures[0]?.aiAnalysis?.analysis?.extractionNotes
+        || aiFailures[0]?.aiAnalysis?.analysis?.error
+        || "unknown error";
+      throw new Error(`AI classification failed for all ${results.length} files. First error: ${firstError}`);
+    }
+
     // Step 3: Deduplication
     const deduplicationResult = this.deduplicateDocuments(results);
     
     // Step 4: Normalize and format output
     const finalOutput = this.normalizeOutput(results, deduplicationResult, this.outputFormat);
 
+    // Records for step 02, in the shape described in the README. Files whose
+    // classification failed are left out and are not remembered, so the next run retries them.
+    const keptDocuments = Array.isArray(deduplicationResult) ? deduplicationResult : deduplicationResult.documents;
+    const records = keptDocuments
+      .filter(doc => doc.aiAnalysis?.success)
+      .map(doc => this.toRecord(doc));
+
+    // Remember every classified file, including near-duplicates that were dropped.
+    for (const doc of results) {
+      if (doc.aiAnalysis?.success) {
+        await this.data_store.set(this.dedupeKey(doc.metadata), {
+          version: this.itemVersion(doc.metadata),
+          name: doc.metadata.name,
+          processedAt: new Date().toISOString(),
+        });
+      }
+    }
+
     const processingTime = Date.now() - startTime;
     
-    $.export("$summary", `Completed processing ${results.length} documents in ${processingTime}ms. ${deduplicationResult.duplicateGroups?.length || 0} duplicates removed.`);
+    $.export("$summary", `Completed processing ${results.length} documents in ${processingTime}ms. ${records.length} records out, ${aiFailures.length} AI failures, ${scanStats.skippedUnchanged} unchanged files skipped, ${deduplicationResult.duplicateGroups?.length || 0} duplicates removed.`);
 
     return {
       ...finalOutput,
+      records,
+      aiFailures: aiFailures.map(r => ({
+        id: r.metadata.id,
+        name: r.metadata.name,
+        error: r.aiAnalysis?.analysis?.extractionNotes || r.aiAnalysis?.analysis?.error,
+      })),
+      scanStats,
       scanConfiguration: {
         folderId: this.folderId,
         includeFileTypes: this.includeFileTypes,

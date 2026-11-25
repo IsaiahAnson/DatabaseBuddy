@@ -17,9 +17,21 @@ jobs:
           node-version: 22
 
       # Pipedream steps are ES modules, so each is syntax-checked as .mjs.
+      # Every file is checked; the job fails if any one of them fails.
       - name: Syntax-check workflow steps
         run: |
+          fail=0
           for f in steps/*.js; do
             cp "$f" "$RUNNER_TEMP/step.mjs"
-            node --check "$RUNNER_TEMP/step.mjs" && echo "ok  $f"
+            if node --check "$RUNNER_TEMP/step.mjs"; then
+              echo "ok   $f"
+            else
+              echo "FAIL $f"
+              fail=1
+            fi
           done
+          exit $fail
+
+      # Unit tests for the step logic, with OneDrive, OpenAI and Notion faked.
+      - name: Unit tests
+        run: node --test test/*.test.mjs

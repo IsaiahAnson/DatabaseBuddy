@@ -123,6 +123,16 @@ export default defineComponent({
       return item.content || item.text || item.name || item.title || JSON.stringify(item);
     },
     
+    // Stable id for a batch, built from its items, so the same batch gets the same id on every run.
+    batchId(batch) {
+      const key = batch.map(item => item.id || this.cleanText(this.getTextContent(item))).join("|");
+      let hash = 0;
+      for (let i = 0; i < key.length; i++) {
+        hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+      }
+      return `batch_${batch.length}_${hash}`;
+    },
+
     processInBatches(items, batchSize) {
       const batches = [];
       for (let i = 0; i < items.length; i += batchSize) {
@@ -181,6 +191,8 @@ export default defineComponent({
     // Initialize processing state (with or without persistent storage)
     let processedBatches = [];
     let deduplicatedItems = [];
+    // Items added in this run. Stored items are only used to detect duplicates.
+    const newItems = [];
     
     // If persistent storage is enabled, load existing state
     if (this.use_persistent_storage && this.data_store) {
@@ -194,7 +206,7 @@ export default defineComponent({
     
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
-      const batchId = `batch_${i}_${Date.now()}`;
+      const batchId = this.batchId(batch);
       
       // Skip if batch already processed (only when using persistent storage)
       if (this.use_persistent_storage && processedBatches.includes(batchId)) {
@@ -202,8 +214,10 @@ export default defineComponent({
       }
       
       // Clean and deduplicate batch
+      let handledInBatch = 0;
       for (const item of batch) {
         processedCount++;
+        handledInBatch++;
         
         // Clean the item
         const cleanedItem = {
@@ -215,29 +229,33 @@ export default defineComponent({
         // Check for duplicates
         if (!this.isDuplicate(cleanedItem, deduplicatedItems, this.similarity_threshold)) {
           deduplicatedItems.push(cleanedItem);
+          newItems.push(cleanedItem);
         }
         
         // Stop if we've reached max records
-        if (deduplicatedItems.length >= this.max_records) {
+        if (newItems.length >= this.max_records) {
           break;
         }
       }
       
-      // Save batch progress (only if persistent storage is enabled)
+      // Save batch progress (only if persistent storage is enabled).
+      // A batch cut short by max_records is not marked, so its other items come back next run.
       if (this.use_persistent_storage && this.data_store) {
-        processedBatches.push(batchId);
+        if (handledInBatch === batch.length) {
+          processedBatches.push(batchId);
+        }
         await this.data_store.set("processed_batches", processedBatches);
         await this.data_store.set("deduplicated_items", deduplicatedItems);
       }
       
       // Stop if we've reached max records
-      if (deduplicatedItems.length >= this.max_records) {
+      if (newItems.length >= this.max_records) {
         break;
       }
     }
     
     // Limit final results
-    const finalRecords = deduplicatedItems.slice(0, this.max_records);
+    const finalRecords = newItems.slice(0, this.max_records);
     
     const duplicatesRemoved = processedCount - finalRecords.length;
     

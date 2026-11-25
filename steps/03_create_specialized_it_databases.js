@@ -28,48 +28,21 @@ export default defineComponent({
     const parsedProperties = {};
     
     for (const propString of this.properties) {
+      let prop;
       try {
-        const prop = JSON.parse(propString);
-        if (!prop.name || !prop.type) {
-          throw new Error("Each property must have a 'name' and 'type' field");
-        }
-        
-        // Create property object for Notion API
-        const propertyDef = {
-          type: prop.type,
-        };
-        
-        // Add type-specific configuration
-        if (prop.type === "select" && prop.select) {
-          propertyDef.select = prop.select;
-        } else if (prop.type === "multi_select" && prop.multi_select) {
-          propertyDef.multi_select = prop.multi_select;
-        } else if (prop.type === "number" && prop.number) {
-          propertyDef.number = prop.number;
-        } else if (prop.type === "date" && prop.date) {
-          propertyDef.date = prop.date;
-        } else if (prop.type === "people" && prop.people) {
-          propertyDef.people = prop.people;
-        } else if (prop.type === "files" && prop.files) {
-          propertyDef.files = prop.files;
-        } else if (prop.type === "checkbox" && prop.checkbox) {
-          propertyDef.checkbox = prop.checkbox;
-        } else if (prop.type === "url" && prop.url) {
-          propertyDef.url = prop.url;
-        } else if (prop.type === "email" && prop.email) {
-          propertyDef.email = prop.email;
-        } else if (prop.type === "phone_number" && prop.phone_number) {
-          propertyDef.phone_number = prop.phone_number;
-        } else if (prop.type === "relation" && prop.relation) {
-          propertyDef.relation = prop.relation;
-        } else if (prop.type === "rollup" && prop.rollup) {
-          propertyDef.rollup = prop.rollup;
-        }
-        
-        parsedProperties[prop.name] = propertyDef;
+        prop = JSON.parse(propString);
       } catch (error) {
         throw new Error(`Invalid JSON in property: ${propString}. Error: ${error.message}`);
       }
+      if (!prop.name || !prop.type) {
+        throw new Error(`Each property must have a 'name' and 'type' field: ${propString}`);
+      }
+
+      // Notion needs an object keyed by the type, even an empty one (for example "title": {}).
+      parsedProperties[prop.name] = {
+        type: prop.type,
+        [prop.type]: prop[prop.type] ?? {},
+      };
     }
     
     // Ensure at least one property exists
@@ -91,7 +64,11 @@ export default defineComponent({
           },
         },
       ],
-      properties: parsedProperties,
+      // The Notion app sends Notion-Version 2025-09-03, where a new database's
+      // properties go under initial_data_source.
+      initial_data_source: {
+        properties: parsedProperties,
+      },
     };
     
     // Add description if provided

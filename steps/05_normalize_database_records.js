@@ -1,5 +1,8 @@
 import { axios } from "@pipedream/platform"
 
+// Fields of the shared record shape (see the README) that are copied as they are.
+const PASS_THROUGH_FIELDS = ["pageId", "summary", "content_type", "webUrl", "eTag"];
+
 export default defineComponent({
   name: "Normalize Database Records",
   description: "Standardize field names, data types, and formats from cleaned data to ensure consistent database population structure",
@@ -218,9 +221,17 @@ export default defineComponent({
           metadata: {}
         };
         
+        // Record-shape fields that later steps read are kept at the top level.
+        for (const key of PASS_THROUGH_FIELDS) {
+          if (record[key] !== undefined) {
+            normalizedRecord[key] = record[key];
+          }
+        }
+
         // Store any additional fields in metadata
         Object.keys(record).forEach(key => {
           const isStandardField = [
+            ...PASS_THROUGH_FIELDS,
             ...this.titleFields,
             ...this.contentFields, 
             ...this.categoryFields,

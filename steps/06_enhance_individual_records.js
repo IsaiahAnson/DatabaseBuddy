@@ -16,7 +16,7 @@ export default defineComponent({
         openai,
         "chatCompletionModelId"
       ],
-      default: "gpt-3.5-turbo"
+      default: "gpt-4o-mini"
     },
     includeRelatedDocuments: {
       type: "boolean",
@@ -31,8 +31,31 @@ export default defineComponent({
       optional: true
     }
   },
+  methods: {
+    // Writes the AI output into the shared record shape (title, summary, tags) that step 07 reads.
+    // Other AI fields, such as priority_level and custom sections, are kept as they are.
+    applyEnhancement(record, enhancement) {
+      const { enhanced_title, detailed_summary, suggested_tags, ...extra } = enhancement
+      return {
+        ...record,
+        ...extra,
+        // The model's reply must not replace the ids that link the record to OneDrive and Notion.
+        id: record.id,
+        pageId: record.pageId,
+        title: enhanced_title || record.title || record.name,
+        summary: detailed_summary || record.summary || "",
+        tags: Array.isArray(suggested_tags) && suggested_tags.length > 0 ? suggested_tags : (record.tags || []),
+        category: record.category,
+        content_type: record.content_type || extra.content_type || "",
+        original_title: record.title || record.name,
+        enhancement_timestamp: new Date().toISOString(),
+        model_used: this.model
+      }
+    }
+  },
   async run({ $ }) {
     const enhancedRecords = []
+    let failedCount = 0
 
     for (const recordStr of this.records) {
       try {
@@ -70,6 +93,7 @@ ${JSON.stringify(record, null, 2)}
 Focus on extracting meaningful insights and creating professional, actionable content. Ensure categories are broad but specific enough to be useful for organization. Tags should be relevant keywords that would help with search and filtering.`
 
         const completion = await this.openai.createChatCompletion({
+          $,
           data: {
             model: this.model,
             messages: [
@@ -83,7 +107,8 @@ Focus on extracting meaningful insights and creating professional, actionable co
               }
             ],
             temperature: 0.7,
-            max_tokens: 1000
+            max_tokens: 1000,
+            response_format: { type: "json_object" }
           }
         })
 
@@ -96,32 +121,21 @@ Focus on extracting meaningful insights and creating professional, actionable co
         try {
           enhancement = JSON.parse(enhancementText)
         } catch (parseError) {
-          // If JSON parsing fails, create a basic enhancement
-          enhancement = {
-            enhanced_title: `Enhanced: ${record.title || record.name || "Untitled Record"}`,
-            detailed_summary: enhancementText.substring(0, 300) + "...",
-            categories: ["General"],
-            suggested_tags: ["unprocessed"],
-            priority_level: "Medium",
-            content_type: "Other"
-          }
+          // For example a reply cut off at max_tokens. Count it as a failure so step 07
+          // leaves the page as it is instead of writing placeholder text.
+          throw new Error(`Model reply was not valid JSON: ${parseError.message}`)
         }
 
         // Merge original record with enhancements
-        const enhancedRecord = {
-          ...record,
-          ...enhancement,
-          original_title: record.title || record.name,
-          enhancement_timestamp: new Date().toISOString(),
-          model_used: this.model
-        }
+        const enhancedRecord = this.applyEnhancement(record, enhancement)
 
         enhancedRecords.push(enhancedRecord)
 
       } catch (error) {
+        failedCount++
         $.export("error", `Failed to enhance record: ${error.message}`)
         
-        // Add the original record with error info
+        // Add the original record unchanged, with the error, so step 07 leaves the page as it is
         let originalRecord
         try {
           originalRecord = JSON.parse(recordStr)
@@ -132,18 +146,17 @@ Focus on extracting meaningful insights and creating professional, actionable co
         enhancedRecords.push({
           ...originalRecord,
           enhancement_error: error.message,
-          enhancement_timestamp: new Date().toISOString(),
-          enhanced_title: originalRecord.title || originalRecord.name || "Enhancement Failed",
-          detailed_summary: "Enhancement failed - original content preserved",
-          categories: ["Error"],
-          suggested_tags: ["enhancement_failed"],
-          priority_level: "Medium",
-          content_type: "Other"
+          enhancement_timestamp: new Date().toISOString()
         })
       }
     }
 
-    $.export("$summary", `Successfully enhanced ${enhancedRecords.length} records using ${this.model}`)
+    // Fail the run when there were records and none could be enhanced.
+    if (this.records.length > 0 && failedCount === this.records.length) {
+      throw new Error(`Enhancement failed for all ${failedCount} records. Last error: ${enhancedRecords[enhancedRecords.length - 1].enhancement_error}`)
+    }
+
+    $.export("$summary", `Enhanced ${this.records.length - failedCount} of ${this.records.length} records using ${this.model}, ${failedCount} failed`)
 
     return {
       enhanced_records: enhancedRecords,

@@ -1,5 +1,19 @@
 import notion from "@pipedream/notion"
 
+// The ten categories that have a database prop below. Keep this list in sync with step 01.
+const CATEGORIES = [
+  "Network Infrastructure",
+  "VDI",
+  "Applications",
+  "Hardware",
+  "Security",
+  "MDM",
+  "Cloud Services",
+  "Backup Recovery",
+  "User Management",
+  "Monitoring",
+];
+
 export default defineComponent({
   name: "Populate IT Databases in Notion",
   description: "Create pages in specialized IT databases in Notion with cleaned data from previous steps, organizing content by categories like Network Infrastructure, VDI, Applications, Hardware, Security, etc.",
@@ -9,7 +23,7 @@ export default defineComponent({
     cleanedData: {
       type: "string[]",
       label: "Cleaned Data",
-      description: "Array of cleaned data objects to populate in Notion databases. Each object should contain: category, title, source, content_type, tags, content_summary, and content",
+      description: "Records as JSON strings, in the record shape from the README: id, title, category, content_type, tags, summary, content, source and webUrl",
     },
     networkInfrastructureDb: {
       propDefinition: [
@@ -146,13 +160,63 @@ export default defineComponent({
         "monitor": "Monitoring",
         "monitoring": "Monitoring",
         "observability": "Monitoring",
+        "intune": "MDM",
+        "autopilot": "MDM",
+        "jamf": "MDM",
+        "endpoint": "MDM",
+        "entra": "User Management",
+        "active directory": "User Management",
+        "azure ad": "User Management",
+        "avd": "VDI",
+        "citrix": "VDI",
+        "bitlocker": "Security",
+        "defender": "Security",
+        "sccm": "Applications",
       };
       
-      const lowerCategory = category.toLowerCase();
-      return categoryMap[lowerCategory] || category;
+      const value = String(category || "").trim();
+      const lowerCategory = value.toLowerCase();
+
+      // 1. A canonical name in any case.
+      const canonical = CATEGORIES.find(name => name.toLowerCase() === lowerCategory);
+      if (canonical) return canonical;
+
+      // 2. An exact alias.
+      if (categoryMap[lowerCategory]) return categoryMap[lowerCategory];
+
+      // 3. An alias as a whole word inside a longer label, longest alias first,
+      //    so "Azure AD Connect" maps to User Management, not Cloud Services.
+      const aliases = Object.keys(categoryMap).sort((a, b) => b.length - a.length);
+      for (const alias of aliases) {
+        const pattern = new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
+        if (pattern.test(lowerCategory)) return categoryMap[alias];
+      }
+
+      return value;
+    },
+    // Notion select option names cannot contain commas and are limited to 100 characters.
+    selectName(value) {
+      return String(value).replace(/,/g, " ").trim().slice(0, 100);
+    },
+    // Filter for the "Source ID" property, used to find a page created on an earlier run.
+    sourceIdFilter(sourceId) {
+      return {
+        property: "Source ID",
+        rich_text: {
+          equals: String(sourceId),
+        },
+      };
+    },
+    async findPageBySourceId(dataSourceId, sourceId) {
+      const response = await this.notion.queryDataSource(dataSourceId, {
+        filter: this.sourceIdFilter(sourceId),
+        page_size: 1,
+      });
+      return response.results?.[0] || null;
     },
     createPageProperties(dataItem) {
       const currentDate = new Date().toISOString();
+      const contentType = this.selectName(dataItem.content_type || "");
       
       return {
         "Name": {
@@ -173,18 +237,31 @@ export default defineComponent({
             },
           ],
         },
+        "Source ID": {
+          rich_text: [
+            {
+              text: {
+                content: String(dataItem.id || ""),
+              },
+            },
+          ],
+        },
+        "Source URL": {
+          url: dataItem.webUrl || null,
+        },
         "Category": {
           select: {
             name: dataItem.category || "",
           },
         },
         "Content Type": {
-          select: {
-            name: dataItem.content_type || "",
-          },
+          select: contentType ? { name: contentType } : null,
         },
         "Tags": {
-          multi_select: (dataItem.tags || []).map(tag => ({ name: tag })),
+          multi_select: (dataItem.tags || [])
+            .map(tag => this.selectName(tag))
+            .filter(Boolean)
+            .map(tag => ({ name: tag })),
         },
         "Created Date": {
           date: {
@@ -200,7 +277,7 @@ export default defineComponent({
           rich_text: [
             {
               text: {
-                content: dataItem.content_summary || "",
+                content: String(dataItem.summary || "").slice(0, 2000),
               },
             },
           ],
@@ -232,11 +309,12 @@ export default defineComponent({
     const databaseMapping = this.getDatabaseMapping();
     const results = {
       created: [],
+      records: [],
       errors: [],
       summary: {},
     };
 
-    for (const dataString of this.cleanedData) {
+    for (const dataString of this.cleanedData || []) {
       try {
         const dataItem = JSON.parse(dataString);
         
@@ -258,23 +336,45 @@ export default defineComponent({
           category: normalizedCategory,
         });
 
-        // Create page content
-        const children = this.createPageContent(dataItem.content);
+        // Look for a page made from the same OneDrive item on an earlier run.
+        const existingPage = dataItem.id
+          ? await this.findPageBySourceId(dataSourceId, dataItem.id)
+          : null;
 
-        // Create the page
-        const page = await this.notion.createPage({
-          parent: {
-            data_source_id: dataSourceId,
-          },
-          properties,
-          children,
-        });
+        let page;
+        let action;
+        if (existingPage) {
+          // Update the properties only. Keep the original created date and page body.
+          delete properties["Created Date"];
+          page = await this.notion.updatePage(existingPage.id, { properties });
+          action = "updated";
+        } else {
+          // Create page content
+          const children = this.createPageContent(dataItem.content);
+
+          // Create the page
+          page = await this.notion.createPage({
+            parent: {
+              data_source_id: dataSourceId,
+            },
+            properties,
+            children,
+          });
+          action = "created";
+        }
 
         results.created.push({
           id: page.id,
+          sourceId: dataItem.id || null,
           title: dataItem.title || "Untitled",
           category: normalizedCategory,
           database: dataSourceId,
+          action,
+        });
+        results.records.push({
+          ...dataItem,
+          category: normalizedCategory,
+          pageId: page.id,
         });
 
         // Update summary counts
@@ -291,18 +391,26 @@ export default defineComponent({
       }
     }
 
-    const totalCreated = results.created.length;
+    const totalCreated = results.created.filter(p => p.action === "created").length;
+    const totalUpdated = results.created.filter(p => p.action === "updated").length;
     const totalErrors = results.errors.length;
     const categoryCount = Object.keys(results.summary).length;
 
-    $.export("$summary", `Successfully created ${totalCreated} pages across ${categoryCount} IT categories. ${totalErrors} errors encountered.`);
+    // Fail the run when records came in but none reached Notion.
+    if (results.created.length === 0 && totalErrors > 0) {
+      throw new Error(`No pages were written. ${totalErrors} errors. First error: ${results.errors[0].error}`);
+    }
+
+    $.export("$summary", `Created ${totalCreated} and updated ${totalUpdated} pages across ${categoryCount} IT categories. ${totalErrors} errors encountered.`);
 
     return {
-      success: true,
+      success: totalErrors === 0,
       created_count: totalCreated,
+      updated_count: totalUpdated,
       error_count: totalErrors,
       categories_populated: results.summary,
       created_pages: results.created,
+      records: results.records,
       errors: results.errors,
     };
   },
